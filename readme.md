@@ -1,4 +1,4 @@
-#Verb Finder
+# Verb Finder
 This repository contains simple python code to extract sentences and corresponding verbs from 
 pdf documents excluding the tables and figures. Specifically, the default parameters are chosen
 to extract sentences and verbs **from section 6.3 of the following document: 
