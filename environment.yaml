@@ -1,0 +1,12 @@
+name: verbfinderenv
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pip=21.2
+  - openpyxl=3.0
+  - spacy=3.3
+  - pip:
+      - pyyaml==6.0
+      - pdfplumber==0.7

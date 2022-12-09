@@ -11,4 +11,4 @@ NLP_PIPELINE:  # spacy configuration
   USE_SENTENCIZER: True  # Whether to use Spacy sentencizer to extract sentences
   FILTER_SINGLE_WORDS: True  # Whether to filter out single word sentences (most likely errors)
   LEMMATIZE: True  # Whether to lemmatize the recognized verbs to their root form
-  DETECT_AUX: True  # Whether to recognize the auxiliary verbs as well (eg: 'be', 'can' etc.)
+  DETECT_AUX: False  # Whether to recognize the auxiliary verbs as well (eg: 'be', 'can' etc.)
