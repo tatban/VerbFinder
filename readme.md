@@ -27,7 +27,9 @@ Then activate the environment with the command: <br>`conda activate verbfinderen
 ### Usage
 Just for this specific task of sentence and verbs extraction from 6.3 section run the following command from the
 project directory: <br>
-`python verb_finder.py`
+`python verb_finder.py` <br>
+By default the output will be stored in ``result.xlsx`` file.
+
 ### Optional arguments
  - --cfg: to provide custom config.yaml file path
  - --pdf: to provide custom input pdf path
