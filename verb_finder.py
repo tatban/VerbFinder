@@ -1,9 +1,12 @@
 from __future__ import unicode_literals, print_function
+from argparse import ArgumentParser
 from functools import partial
 import re
 import pdfplumber
 import spacy
 from spacy.language import Language
+from spacy.tokens.doc import Doc
+from spacy.tokens.span import Span
 from openpyxl.workbook import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import exceptions as opex
@@ -23,7 +26,6 @@ def text_cleaner(txt: str, patterns: List[str]) -> str:
     :param patterns: list of regex patterns
     :return: clean text after removing the matching patterns
     """
-    # return re.sub('|'.join([s.replace("'","") for s in patterns]), "", txt)
     return re.sub('|'.join(patterns), "", txt)
 
 
@@ -47,7 +49,7 @@ def setup_nlp_pipeline(spacy_model: str, use_sentencizer: bool = True) -> Langua
     return nlp_pipeline
 
 
-def get_verbs(sentence, lemmatize: bool = True, detect_aux: bool = True) -> List[str]:
+def get_verbs(sentence: Span, lemmatize: bool = True, detect_aux: bool = True) -> List[str]:
     """
     Returns the verbs of a input sentence. If lemmatize=True, verbs are converted to root
     forms. If detect_aux=True, auxiliary verbs (eg. 'be', 'can') are also detected.
@@ -60,10 +62,10 @@ def get_verbs(sentence, lemmatize: bool = True, detect_aux: bool = True) -> List
     if lemmatize:
         return [word.lemma_ for word in sentence if word.pos_ in verb_types]
     else:
-        return [word for word in sentence if word.pos_ in verb_types]
+        return [word.text for word in sentence if word.pos_ in verb_types]
 
 
-def process_document(document,
+def process_document(document: Doc,
                      filter_single_word: bool = True,
                      lemmatize: bool = True,
                      detect_aux: bool = True) -> List[Tuple[str, List[str]]]:
@@ -112,9 +114,9 @@ def save_xlsx(table: List[Tuple[str, List[str]]], out_path: str):
 
 
 def driver(configuration: Dict,
-           pdf_path: str = "test_pdf.pdf",
-           pages: List[int] = [18, 24],
-           out_path: str = "result.xlsx"):
+           pdf_path: str,
+           pages: List[int],
+           out_path: str):
     """
     Driver function to extract the sentences and corresponding verbs from a pdf document
     :param configuration: a dictionary having settings for the program read from config.yaml
@@ -189,7 +191,28 @@ def driver(configuration: Dict,
 
 
 if __name__ == "__main__":
-    config = read_yaml("config.yaml")
+    """
+    all default values for the arguments are chosen here for the specific task 
+    of extracting sentences and corresponding verbs from section 6.3 in the OPC 
+    Unified Architecture Documentation obtained after pdf conversion of the htm.
+    Please look at readme.md to know more.)
+    """
+    parser = ArgumentParser()  # CLI argument parser object
+    # adding arguments
+    parser.add_argument("--cfg", type=str,
+                        help="String path of the yaml config file (.yaml)",
+                        default="config.yaml")
+    parser.add_argument("--pdf", type=str,
+                        help="String path of the input pdf file (.pdf)",
+                        default="test_pdf.pdf")
+    parser.add_argument("--pgs", type=List[int],
+                        help="Pages range to process [start, end] counting from 1",
+                        default=[18, 24])
+    parser.add_argument("--out", type=str,
+                        help="string path of output file (.xlsx)",
+                        default="result.xlsx")
+    args = parser.parse_args()  # parsing arguments
+    config = read_yaml(args.cfg)
     start = time.time()
-    driver(config)
+    driver(config, args.pdf, args.pgs, args.out)
     print(f"Time elapsed: {time.time() - start} seconds")
