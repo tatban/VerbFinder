@@ -1,4 +1,4 @@
-# Code in this file is adapted from:
+# Code in this file is slightly adapted from:
 # https://github.com/jsvine/pdfplumber/issues/242#issuecomment-668448246
 import pdfplumber
 
@@ -35,4 +35,3 @@ def table_filter(bboxes, obj):
         x0, top, x1, bottom = _bbox
         return (h_mid >= x0) and (h_mid < x1) and (v_mid >= top) and (v_mid < bottom)
     return not any(obj_in_bbox(__bbox) for __bbox in bboxes)
-

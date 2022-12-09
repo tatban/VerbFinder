@@ -3,36 +3,59 @@ from functools import partial
 import re
 import pdfplumber
 import spacy
+from spacy.language import Language
 from openpyxl.workbook import Workbook
 from openpyxl.styles import Font
+from openpyxl.utils import exceptions as opex
 from table_handler import get_bounding_boxes, table_filter
 import time
-
-FILTER_PATTERNS = [
-    r"Figure\s[0-9]+\s[–-]\s.+",  # Figure title filter
-    r"Table\s[0-9]+\s[–-]\s.+",  # Table title filter
-    r"[0-9]+\.[0-9]+\.[0-9]+\s{6}.+",  # subsection filter
-    r"[0-9]+\.[0-9]+\s{6}.+",  # sub sub section filter
-    r"HiQPdf\sEvaluation\s\d\d\/\d\d\/\d\d\d\d"  # special filter for online converted pdf
-]
-
-SPACY_MODEL = 'en_core_web_sm'
+from typing import Dict, List, Tuple
+from pathlib import Path
+import sys
+import warnings
+from utils import read_yaml
 
 
-def text_cleaner(txt, patterns):
+def text_cleaner(txt: str, patterns: List[str]) -> str:
+    """
+    Removes matching regex patterns from the input text.
+    :param txt: input text
+    :param patterns: list of regex patterns
+    :return: clean text after removing the matching patterns
+    """
+    # return re.sub('|'.join([s.replace("'","") for s in patterns]), "", txt)
     return re.sub('|'.join(patterns), "", txt)
 
 
-def setup_nlp_pipeline(spacy_model, use_sentencizer=True):
+def setup_nlp_pipeline(spacy_model: str, use_sentencizer: bool = True) -> Language:
+    """
+    Loads a pretrained spacy language model for performing the nlp pipeline tasks.
+    :param spacy_model: name of the language model (eg. 'en_core_web_sm')
+    :param use_sentencizer: whether to use sentence segmentation as a part of nlp pipeline
+    :return: language specific pretrained spacy language model object
+    """
     if not spacy.util.is_package(spacy_model):
-        spacy.cli.download(spacy_model)
+        try:
+            spacy.cli.download(spacy_model)
+        except Exception as e:
+            sys.exit(
+                f"Couldn't download {spacy_model} model due to following "
+                f"exception:\n{e}")
     nlp_pipeline = spacy.load(spacy_model)
     if use_sentencizer:
         nlp_pipeline.add_pipe('sentencizer')
     return nlp_pipeline
 
 
-def get_verbs(sentence, lemmatize=True, detect_aux=True):
+def get_verbs(sentence, lemmatize: bool = True, detect_aux: bool = True) -> List[str]:
+    """
+    Returns the verbs of a input sentence. If lemmatize=True, verbs are converted to root
+    forms. If detect_aux=True, auxiliary verbs (eg. 'be', 'can') are also detected.
+    :param sentence:
+    :param lemmatize: whether to convert the verbs to their root forms
+    :param detect_aux: whether to detect auxiliary verbs like 'be', 'can'
+    :return: list of verbs strings
+    """
     verb_types = ["VERB", "AUX"] if detect_aux else ["VERB"]
     if lemmatize:
         return [word.lemma_ for word in sentence if word.pos_ in verb_types]
@@ -40,17 +63,38 @@ def get_verbs(sentence, lemmatize=True, detect_aux=True):
         return [word for word in sentence if word.pos_ in verb_types]
 
 
-def process_document(document, filter_single_word=False):
+def process_document(document,
+                     filter_single_word: bool = True,
+                     lemmatize: bool = True,
+                     detect_aux: bool = True) -> List[Tuple[str, List[str]]]:
+    """
+    Loops over all the sentences of the document and extracts verbs from those. Lists the
+    sentences and corresponding verbs in a list of tuples
+    :param document:
+    :param filter_single_word: If true, filter out single word sentences (which are most
+    likely to be the outcome of sentence segmentation errors.)
+    :param lemmatize: whether to convert the verbs to their root forms
+    :param detect_aux: whether to detect auxiliary verbs like 'be', 'can'
+    :return:
+    """
     if filter_single_word:
-        return [(sentence.text.strip().replace('\n', ''), get_verbs(sentence))
+        return [(sentence.text.strip().replace('\n', ''),
+                 get_verbs(sentence, lemmatize=lemmatize, detect_aux=detect_aux))
                 for sentence in list(document.sents)
                 if len(sentence.text.strip().replace('\n', '').split()) > 1]
     else:
-        return [(sentence.text.strip().replace('\n', ''), get_verbs(sentence))
+        return [(sentence.text.strip().replace('\n', ''),
+                 get_verbs(sentence, lemmatize=lemmatize, detect_aux=detect_aux))
                 for sentence in list(document.sents)]
 
 
-def save_xlsx(table):
+def save_xlsx(table: List[Tuple[str, List[str]]], out_path: str):
+    """
+    Saves the list of tuples of sentences and corresponding verbs in xlsx file
+    :param table: list of tuples in the form [(sentence, [verbs])]
+    :param out_path: string path of a writable .xlsx file. If the file exists already,
+    it will be overwritten.
+    """
     wb = Workbook()
     ws = wb.active  # grab the active worksheet
     ws['A1'] = "Sentences"
@@ -60,35 +104,92 @@ def save_xlsx(table):
     for i, (sentence, verbs) in enumerate(table, 2):
         ws[f"A{i}"] = sentence
         ws[f"B{i}"] = ", ".join(verbs)
-    wb.save("result.xlsx")
+    try:
+        wb.save(out_path)
+        print(f"Extracted sentences and verbs are saved successfully in {out_path} file.\n")
+    except opex as ope:
+        sys.exit(f"Couldn't save file due to following exception:\n{ope.message}")
 
 
-def driver():
+def driver(configuration: Dict,
+           pdf_path: str = "test_pdf.pdf",
+           pages: List[int] = [18, 24],
+           out_path: str = "result.xlsx"):
+    """
+    Driver function to extract the sentences and corresponding verbs from a pdf document
+    :param configuration: a dictionary having settings for the program read from config.yaml
+    :param pdf_path: file path (string) of the input pdf file
+    :param pages: page range [start, end] containing the sections of interest. default is None,
+    meaning all pages.
+    :param out_path: string path of a writable .xlsx file. If the file exists already,
+    it will be overwritten.
+    """
+    # validate input path
+    assert pdf_path.split(".")[-1].lower() == "pdf", "Only pdf file is supported at the moment"
+    assert Path(pdf_path).is_file(), f"{pdf_path} file doesn't exist. Please enter a valid " \
+                                     f"pdf file path"
+
+    # validate output path
+    assert out_path.split(".")[-1].lower() == "xlsx", "output needs to be a .xlsx file"
+    # warn user before overwriting the file if the file already exists
+    if Path(out_path).is_file():
+        warnings.warn(f"File {out_path} already exists. If you continue the file will be "
+                      f"overwritten.\n")
+        choice = input("Continue? [Y/n]")
+        if choice.lower() in {'no', 'n'}:
+            sys.exit("Aborting the execution not to overwrite the output file.\n")
+
+    # validate page ranges
+    if pages is not None:
+        assert len(pages) == 2, "page range should be like [stat page umber, end page number]"
+        assert pages[0] <= pages[1], "start page number must be less than end page number"
+        assert pages[0] > 0, "lowest possible page number is 1"
+
     # open pdf
-    pdf = pdfplumber.open("test_pdf.pdf")
+    try:
+        pdf = pdfplumber.open(pdf_path)
+    except Exception as e:
+        sys.exit(f"Couldn't open pdf file {pdf_path} due to following exception:\n{e}")
+
+    # handle if all pages need to be processed
+    if pages is None:
+        pages = [1, len(pdf.pages)]
 
     # keep nlp pipeline ready
-    nlp = setup_nlp_pipeline(SPACY_MODEL)
+    nlp = setup_nlp_pipeline(
+        configuration.get('NLP_PIPELINE', {}).get('SPACY_MODEL', 'en_core_web_sm'),
+        use_sentencizer=configuration.get('NLP_PIPELINE', {}).get('USE_SENTENCIZER', True)
+    )
 
     # loop pages
     clean_text = ""
-    for p in pdf.pages[17:23]:  # 6.3 starts at page no 18 and ends at 24. Page count starts from 1
+    for p in pdf.pages[pages[0] - 1:pages[1] - 1]:
         # find table locations if any
         bboxes = get_bounding_boxes(p)
         page_specific_table_filter = partial(table_filter, bboxes)
         # find the text not lying in the table region
         text = p.filter(page_specific_table_filter).extract_text()
         # clean text and append
-        clean_text = '\n\n'.join([clean_text, text_cleaner(text, FILTER_PATTERNS)])
+        clean_text = '\n\n'.join([
+            clean_text,
+            text_cleaner(text,
+                         configuration.get('TXT_CLEANER', {}).get('FILTER_PATTERNS', None))
+        ])
 
     # run nlp pipeline
     doc = nlp(clean_text)
-    table = process_document(doc)
-    save_xlsx(table)
+    table = process_document(
+        doc,
+        filter_single_word=configuration.get('NLP_PIPELINE', {}).get('FILTER_SINGLE_WORDS',
+                                                                     True),
+        lemmatize=configuration.get('NLP_PIPELINE', {}).get('LEMMATIZE', True),
+        detect_aux=configuration.get('NLP_PIPELINE', {}).get('DETECT_AUX', True)
+    )
+    save_xlsx(table, out_path)
 
 
 if __name__ == "__main__":
+    config = read_yaml("config.yaml")
     start = time.time()
-    driver()
-    print(f"Time elapsed: {time.time()-start} seconds")
-
+    driver(config)
+    print(f"Time elapsed: {time.time() - start} seconds")

@@ -1,0 +1,14 @@
+TXT_CLEANER:
+  FILTER_PATTERNS:  # regex patterns to filter out unnecessary texts (eg: Figure title etc.)
+    - 'Figure\s[0-9]+\s[–-]\s.+'  # Figure title filter
+    - 'Table\s[0-9]+\s[–-]\s.+'  # Table title filter
+    - '[0-9]+\.[0-9]+\.[0-9]+\s{6}.+'  # subsection filter
+    - '[0-9]+\.[0-9]+\s{6}.+'  # sub sub section filter
+    - 'HiQPdf\sEvaluation\s\d\d\/\d\d\/\d\d\d\d'  # special filter for online converted pdf
+
+NLP_PIPELINE:  # spacy configuration
+  SPACY_MODEL: en_core_web_sm  # language model used for POS tagging
+  USE_SENTENCIZER: True  # Whether to use Spacy sentencizer to extract sentences
+  FILTER_SINGLE_WORDS: True  # Whether to filter out single word sentences (most likely errors)
+  LEMMATIZE: True  # Whether to lemmatize the recognized verbs to their root form
+  DETECT_AUX: True  # Whether to recognize the auxiliary verbs as well (eg: 'be', 'can' etc.)
